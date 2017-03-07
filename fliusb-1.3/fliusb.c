@@ -57,7 +57,7 @@
 #include <linux/mm.h>
 #include <linux/pagemap.h>
 #include <linux/scatterlist.h>
-#include <asm/scatterlist.h>
+//#include <asm/scatterlist.h>
 #endif
 
 #include "fliusb.h"
@@ -328,7 +328,7 @@ static int fliusb_sg_bulk_read(fliusb_t *dev, unsigned int pipe,
     return -ERESTARTSYS;
 
   down_read(&current->mm->mmap_sem);
-  numpg = get_user_pages(current, current->mm, (size_t)userbuffer & PAGE_MASK,
+  numpg = get_user_pages_remote(current, current->mm, (size_t)userbuffer & PAGE_MASK,
 			 numpg, 1, 0, dev->usbsg.userpg, NULL);
   up_read(&current->mm->mmap_sem);
 
@@ -409,7 +409,7 @@ static int fliusb_sg_bulk_read(fliusb_t *dev, unsigned int pipe,
   {
     if (!PageReserved(dev->usbsg.userpg[i]))
       SetPageDirty(dev->usbsg.userpg[i]);
-    page_cache_release(dev->usbsg.userpg[i]);
+    put_page(dev->usbsg.userpg[i]);
   }
 
   return err;
