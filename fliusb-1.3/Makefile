@@ -1,21 +1,76 @@
-obj-m		:= fliusb.o
+################################################################################
+#  Note: This is a modified Makefile replacement for compiling the 
+#        FLI SDK v1.104 as a shared object (.so) library on linux. 
+#        The source code can be found at 
+#        http://www.flicamera.com/software/index.html
+################################################################################
+UNAME	= $(shell uname -s)
+ifeq ($(findstring BSD, $(UNAME)), BSD)
+  UNAME	= BSD
+endif
 
-KDIR		?= /lib/modules/$(shell uname -r)/build
-PWD		:= $(shell pwd)
+VPATH	= unix
+ifeq ($(UNAME), Linux)
+  VPATH	+= unix/linux
+endif
+ifeq ($(UNAME), BSD)
+  VPATH	+= unix/bsd
+endif
+ifeq ($(UNAME), Darwin)
+  VPATH	+= unix/osx
+endif
 
-EXTRA_CFLAGS		+= -O2 -Wall
+DIR	= $(shell pwd)
+CC	= gcc
+INC	= $(DIR) $(DIR)/unix
+CFLAGS	= -fPIC -Wall -O2 -g $(patsubst %, -I%, $(INC))
 
-#EXTRA_CFLAGS		+= -DDEBUG	# enable debug messages
-#EXTRA_CFLAGS		+= -DASYNCWRITE	# enable asynchronous writes
-EXTRA_CFLAGS		+= -DSGREAD	# enable scatter-gather reads
+ifeq ($(UNAME), Darwin)
+	CFLAGS += -arch i386 -arch x86_64
+	INC += $(DIR)/unix/osx /Developer/SDKs/MacOSX10.7.sdk/usr/include
+	LIBS =IOkit
+	LIBPATH = /usr/local/lib /sw/lib /usr/lib/ /System/Library/Frameworks/CoreFoundation.framework
+	LDLIBS = $(patsubst %, -l%, $(LIBS))
+	LOADLIBES = $(patsubst %, -L%, $(LIBPATH))
+endif
 
-all: module cleanup
+AR	= ar
+ARFLAGS	= -rus
 
-module:
-	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) modules
+SYS	= libfli-sys.o
+DEBUG	= libfli-debug.o
+MEM	= libfli-mem.o
+USB_IO	= libfli-usb.o libfli-usb-sys.o
+ifeq ($(UNAME), Linux)
+  PPORT_IO	= libfli-parport.o
+endif
+SERIAL_IO	= libfli-serial.o
+IO	= $(USB_IO) $(PPORT_IO) $(SERIAL_IO)
+CAM	= libfli-camera.o libfli-camera-parport.o libfli-camera-usb.o
+FILT	= libfli-filter-focuser.o
 
-cleanup:
-	rm -f *.o .*.cmd *.mod.c; rm -rf .tmp_versions
+ALLOBJ	= $(SYS) $(DEBUG) $(MEM) $(IO) $(CAM) $(FILT)
 
-clean: cleanup
-	rm -f *.ko test
+libfli.so: libfli.o $(ALLOBJ)
+	$(CC) -shared -o $@ $^
+
+install: libfli.so
+	cp libfli.so /usr/local/lib
+
+doc: doc-html doc-pdf
+
+.PHONY: doc-html
+doc-html: libfli.dxx libfli.h libfli.c
+	doc++ -d doc $<
+
+.PHONY: doc-pdf
+doc-pdf: libfli.dxx libfli.h libfli.c
+	(test -d pdf || mkdir pdf) && cp docxx.sty pdf
+	doc++ -t $< | sed 's///g' > pdf/libfli.tex
+	cd pdf && latex libfli.tex && latex libfli.tex
+	cd pdf && dvips -o libfli.ps libfli.dvi && ps2pdf libfli.ps
+	mv pdf/libfli.pdf . && rm -rf pdf
+
+.PHONY: clean
+clean:
+	rm -f $(ALLOBJ) libfli.o libfli.a
